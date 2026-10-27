@@ -1,0 +1,14 @@
+# Конфигурация сборки проекта.
+# Глобальный ~/.cargo/config.toml задаёт panic=abort и target-cpu=native —
+# они ломают cargo test и не нужны игре. Здесь перекрываем их
+# (позже объявленные флаги rustc побеждают ранние).
+
+[build]
+rustflags = []
+
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+    "-C", "opt-level=3",
+    "-C", "panic=unwind",
+    "-C", "target-cpu=generic",
+]

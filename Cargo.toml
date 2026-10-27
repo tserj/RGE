@@ -1,0 +1,17 @@
+[package]
+name = "dx12_menu"
+version = "0.3.0"
+edition = "2021"
+
+[dependencies]
+# Графика: DirectX 12 (Windows) / Vulkan (Linux) / Metal (macOS)
+wgpu = "30"
+winit = "0.30"
+# Синхронное ожидание async-запросов wgpu (request_adapter/request_device)
+pollster = "0.4"
+# Растеризация глифов шрифта на CPU (чистый Rust)
+fontdue = "0.9"
+
+# Windows: MessageBox для критических ошибок
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_UI_WindowsAndMessaging"] }
