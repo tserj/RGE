@@ -6,9 +6,13 @@
 #
 # Шаги:
 #   1. trunk build --release      — cargo (opt-level=z, lto=fat, strip) + wasm-bindgen;
-#   2. wasm-opt -Oz               — дополнительное сжатие байткода (~15%).
+#   2. wasm-opt -Oz               — дополнительное сжатие байткода (~15%);
+#   3. brotli (node)              — .br-копии файлов для отдачи с Content-Encoding: br.
 #
-# Результат: dist/web/ (~16 МБ wasm для меню на Bevy 0.20; до сжатия было 51 МБ).
+# Требования: cargo, trunk, wasm-opt (https://github.com/WebAssembly/binaryen),
+#             Node.js 18+ (для brotli и локального сервера).
+# Результат: dist/web/ (~16 МБ wasm, ~3 МБ в brotli; до всех оптимизаций было 51 МБ).
+# Тест отдачи: node scripts/serve_web.mjs
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -30,6 +34,9 @@ done
 
 wasm-opt -Oz $OPT_FLAGS -o "$wasm.opt" "$wasm"
 mv "$wasm.opt" "$wasm"
+
+echo "==> brotli"
+node scripts/brotli_compress.mjs dist/web
 
 echo "==> готово:"
 ls -la dist/web/

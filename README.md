@@ -56,8 +56,10 @@ and `Cargo.toml`):
 - **Native (Windows/Linux/macOS) — maximum performance**: `opt-level=3`,
   `codegen-units=1`, fat LTO. Debug info is stripped (no runtime impact).
 - **Web (wasm32) — minimum size**: `opt-level=z`, same LTO, stripped,
-  plus a `wasm-opt -Oz` pass (Binaryen). The release web bundle is
-  ~16 MB (was 51 MB with default Bevy features and no post-processing).
+  plus a `wasm-opt -Oz` pass (Binaryen) and pre-compressed `.br` copies
+  (Brotli) for serving. The release web bundle is ~16 MB on disk and
+  **~3.5 MB over the wire** with Brotli (was 51 MB with default Bevy
+  features and no post-processing).
   The used Wasm features (bulk-memory, sign-ext, nontrapping-float-to-int,
   reference-types) are baseline in all modern browsers — Chrome 75+,
   Firefox 79+, Safari 15+ (hence the iOS 15 deployment target).
@@ -70,8 +72,8 @@ and `Cargo.toml`):
 Prerequisites: [Rust](https://rustup.rs) (latest stable), Visual Studio
 C++ Build Tools (Windows); for web builds — [Trunk](https://trunkrs.dev)
 (`cargo install --locked trunk`), the `wasm32-unknown-unknown` target
-(`rustup target add wasm32-unknown-unknown`) and, for the min-size release,
-[wasm-opt](https://github.com/WebAssembly/binaryen) (Binaryen) in PATH.
+(`rustup target add wasm32-unknown-unknown`), [wasm-opt](https://github.com/WebAssembly/binaryen)
+(Binaryen) and Node.js 18+ (Brotli compression + local test server).
 
 ```bash
 cargo test          # unit tests (pure logic)
@@ -83,6 +85,14 @@ cargo run           # native run (debug); release: cargo run --release
 ```bash
 trunk serve                      # dev server on http://localhost:8080
 scripts/build_web_release.sh     # min-size release bundle in dist/web/ (~16 MB)
+node scripts/serve_web.mjs       # test server on :8088, serves Brotli-compressed files
+```
+
+The release script also emits pre-compressed `.br` copies of all files
+(Brotli). The test server serves them with `Content-Encoding: br` when the
+client announces support — browsers decompress transparently, no extra
+client-side work is needed. In production, configure your host the same way
+(nginx: `brotli_static on;`, most CDNs do this automatically).
 ```
 
 ### Android

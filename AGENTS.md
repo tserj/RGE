@@ -168,7 +168,8 @@ cargo run              # runs the debug binary (GUI window will open!)
 # Web (requires: rustup target add wasm32-unknown-unknown, cargo install trunk;
 # for the min-size release also wasm-opt from Binaryen in PATH)
 trunk serve                      # dev server, http://localhost:8080
-scripts/build_web_release.sh     # min-size release: trunk + wasm-opt -Oz (~16 MB)
+scripts/build_web_release.sh     # min-size release: trunk + wasm-opt -Oz + brotli (~16 MB, ~3.5 MB over the wire)
+node scripts/serve_web.mjs       # local test server that serves the .br copies
 ```
 
 **Release configuration is per platform (do not change without need):**
@@ -241,7 +242,8 @@ for the host target in `.cargo/config.toml` (the global user config sets
 - wasm32 needs `getrandom` with feature `wasm_js` (bevy 0.20 uses getrandom 0.4).
 - Bevy UI requires a camera (`commands.spawn(Camera2d)`) to render at all.
 - Size: default Bevy features (2d+3d+audio) inflate the web binary to ~51 MB;
-  the manual feature set + `opt-level=z` + `wasm-opt -Oz` bring it to ~16 MB.
+  the manual feature set + `opt-level=z` + `wasm-opt -Oz` bring it to ~16 MB,
+  Brotli pre-compression to ~3.5 MB over the wire.
   `wasm-opt` needs explicit proposal flags (see §7) — otherwise it fails
   validation on `memory.copy` / `trunc_sat` instructions.
 
@@ -286,7 +288,8 @@ for the host target in `.cargo/config.toml` (the global user config sets
 - [x] Ported from hand-rolled wgpu renderer to **Bevy 0.20**
 - [x] Web build via Trunk (WebAssembly + WebGL2)
 - [x] Web bundle minimized to ~16 MB (manual Bevy features, opt-level=z,
-      strip, wasm-opt; was 51 MB with defaults)
+      strip, wasm-opt; was 51 MB with defaults) + Brotli copies (~3.5 MB)
+      and a local test server serving them (`scripts/serve_web.mjs`)
 - [x] Per-platform release policy: native = max performance, web = min size
 - [x] Android shell (Gradle + WebView) and iOS shell (XcodeGen + WKWebView)
 - [x] Embedded OFL font with Cyrillic support (Fira Sans + license file)
