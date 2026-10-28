@@ -2,7 +2,7 @@ name: GameMenu
 options:
   bundleIdPrefix: ru.game
   deploymentTarget:
-    iOS: "14.0"
+    iOS: "15.0"  # wasm-сборка использует bulk-memory (Safari 15+)
   createIntermediateGroups: true
 settings:
   base:

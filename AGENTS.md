@@ -52,7 +52,7 @@ and separation of concerns are mandatory (see §4).
 
 | Crate     | Version | Purpose                                          |
 |-----------|---------|--------------------------------------------------|
-| `bevy`    | `0.20`  | Game engine: windowing, rendering (wgpu), UI, input, audio, assets |
+| `bevy`    | `0.20`  | Game engine: windowing, rendering (wgpu), UI, input, audio, assets. Compiled with a **manual feature set** (`default-features = false`): UI + render + winit only — no 3D, audio codecs, asset-format loaders, scene or picking |
 | `windows` | `0.62`  | Win32 API, **Windows only** (`MessageBoxW` for fatal errors) |
 | `getrandom` | `0.4` | **wasm32 only**: `wasm_js` feature for the browser PRNG |
 
@@ -165,10 +165,26 @@ cargo build            # debug build
 cargo build --release  # release build (what users run)
 cargo run              # runs the debug binary (GUI window will open!)
 
-# Web (requires: rustup target add wasm32-unknown-unknown, cargo install trunk)
-trunk serve            # dev server, http://localhost:8080
-trunk build --release  # static bundle in dist/web/
+# Web (requires: rustup target add wasm32-unknown-unknown, cargo install trunk;
+# for the min-size release also wasm-opt from Binaryen in PATH)
+trunk serve                      # dev server, http://localhost:8080
+scripts/build_web_release.sh     # min-size release: trunk + wasm-opt -Oz (~16 MB)
 ```
+
+**Release configuration is per platform (do not change without need):**
+
+- Native (Windows/Linux/macOS) — **maximum performance**: `opt-level=3`
+  via target rustflags in `.cargo/config.toml`, fat LTO, `codegen-units=1`.
+- Web (wasm32-unknown-unknown) — **minimum size**: `opt-level=z` via target
+  rustflags, plus `wasm-opt -Oz --enable-bulk-memory --enable-sign-ext
+  --enable-nontrapping-float-to-int --enable-reference-types`
+  (see `scripts/build_web_release.sh`). The Wasm feature flags are required:
+  wasm-bindgen 0.2.129+ output uses those proposals; all of them are baseline
+  in modern browsers (Chrome 75+, Firefox 79+, Safari 15+).
+
+`cargo test` on Linux/macOS may need the same target-rustflags override added
+for the host target in `.cargo/config.toml` (the global user config sets
+`panic=abort`, which breaks tests).
 
 - **Unit tests** cover pure logic only (key mapping, menu state, game flow,
   logging helpers). They must never open windows or touch the GPU. Keep game
@@ -224,6 +240,10 @@ trunk build --release  # static bundle in dist/web/
   `bevy::window::WindowPlugin` / `bevy::app`.
 - wasm32 needs `getrandom` with feature `wasm_js` (bevy 0.20 uses getrandom 0.4).
 - Bevy UI requires a camera (`commands.spawn(Camera2d)`) to render at all.
+- Size: default Bevy features (2d+3d+audio) inflate the web binary to ~51 MB;
+  the manual feature set + `opt-level=z` + `wasm-opt -Oz` bring it to ~16 MB.
+  `wasm-opt` needs explicit proposal flags (see §7) — otherwise it fails
+  validation on `memory.copy` / `trunc_sat` instructions.
 
 ---
 
@@ -243,7 +263,19 @@ trunk build --release  # static bundle in dist/web/
 
 ---
 
-## 11. Current State / Done
+## 12. Workflow: Commit & Push After Every Task (MANDATORY)
+
+- After **every solved task** (a request fully implemented and verified),
+  **commit the changes and push them to GitHub** (`git push` to `origin`).
+- Do not leave solved work uncommitted, and do not batch several solved
+  tasks into one commit.
+- Commit messages: English, imperative mood, short subject + bullet body
+  describing what and why.
+- Only verified (build/tests green) work may be committed and pushed.
+
+---
+
+## 13. Current State / Done
 
 - [x] Menu renders (title, items, selection with underline, messages, hint)
 - [x] Keyboard navigation, layout-independent (W/S, ↑/↓, Enter, Esc)
@@ -253,6 +285,9 @@ trunk build --release  # static bundle in dist/web/
 - [x] Log file next to exe + MessageBox for critical errors (native)
 - [x] Ported from hand-rolled wgpu renderer to **Bevy 0.20**
 - [x] Web build via Trunk (WebAssembly + WebGL2)
+- [x] Web bundle minimized to ~16 MB (manual Bevy features, opt-level=z,
+      strip, wasm-opt; was 51 MB with defaults)
+- [x] Per-platform release policy: native = max performance, web = min size
 - [x] Android shell (Gradle + WebView) and iOS shell (XcodeGen + WKWebView)
 - [x] Embedded OFL font with Cyrillic support (Fira Sans + license file)
 - [x] 16 unit tests passing (`cargo test`)

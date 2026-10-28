@@ -17,8 +17,11 @@ rustflags = [
 # (panic=abort, target-cpu=native, inline-threshold), которые к wasm
 # неприменимы (inline-threshold удалён из rustc) и ломают сборку.
 # Пустой набор cargo игнорирует, поэтому задаём нейтральные флаги явно.
+# opt-level=z — минимальный размер web-бинаря (нативные платформы собираются
+# со своим opt-level=3 для скорости — см. профиль release в Cargo.toml).
 [target.wasm32-unknown-unknown]
 rustflags = [
+    "-C", "opt-level=z",
     "-C", "panic=abort",
     "-C", "target-cpu=generic",
 ]

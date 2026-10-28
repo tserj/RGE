@@ -5,7 +5,25 @@ edition = "2021"
 
 [dependencies]
 # Игровой движок Bevy: https://github.com/bevyengine/bevy
-bevy = "0.20"
+#
+# Фичи собраны вручную вместо default (2d+3d+ui+audio), чтобы не тащить
+# в бинарь 3D-рендер, аудиокодеки, загрузчики gltf/текстур и picking —
+# для меню это уменьшает web-сборку в разы:
+#  * ui_bevy_render  — Bevy UI + рендер (тянет ui_api → bevy_ui, bevy_text,
+#    bevy_asset, bevy_log, bevy_state, bevy_input_focus);
+#  * bevy_winit, bevy_clipboard, multi_threaded — окно, буфер, потоки;
+#  * webgl2 — бэкенд рендера в браузере; x11/wayland — Linux
+#    (на Windows/wasm внутренне выключены через cfg).
+bevy = { version = "0.20", default-features = false, features = [
+    "std",
+    "bevy_winit",
+    "bevy_clipboard",
+    "multi_threaded",
+    "ui_bevy_render",
+    "webgl2",
+    "x11",
+    "wayland",
+] }
 
 # WASM-сборка (web): источник случайных чисел для браузера
 # (см. https://docs.rs/getrandom — без wasm_js он паникует в браузере)
@@ -24,7 +42,13 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
-# Релиз: чуть быстрее в рантайме за счёт времени сборки
+# Релиз: философия по платформам (см. README):
+#  * нативные (Windows/Linux/macOS) — максимальная скорость:
+#    opt-level=3 задаётся в .cargo/config.toml (rustflags msvc-таргета);
+#  * web (wasm32) — минимальный размер: opt-level=z в rustflags wasm-таргета.
+# Общее: один юнит кодогенерации + fat-LTO (ускоряет И уменьшает бинарь);
+# strip отладочной информации на скорость не влияет.
 [profile.release]
 codegen-units = 1
-lto = "thin"
+lto = "fat"
+strip = "debuginfo"

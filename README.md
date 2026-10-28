@@ -38,7 +38,7 @@ the game itself contains only menu logic and UI composition.
 | Windows | native (DirectX 12 via wgpu) | `cargo run --release` |
 | Linux | native (Vulkan via wgpu) | `cargo run --release` |
 | macOS | native (Metal via wgpu) | `cargo run --release` |
-| Web | WebAssembly + WebGL2, served/bundled by [Trunk](https://trunkrs.dev) | `trunk serve` / `trunk build --release` |
+| Web | WebAssembly + WebGL2, served/bundled by [Trunk](https://trunkrs.dev) | `trunk serve` / `scripts/build_web_release.sh` |
 | Android | native Gradle app (Kotlin) with a system `WebView` hosting the web build | see below |
 | iOS | native Xcode app (Swift) with a `WKWebView` hosting the web build | see below |
 
@@ -48,12 +48,30 @@ toolchain story here, so per the project decision they use **lightweight
 native shells** (a WebView in a minimal app) that host the **web build** —
 the game logic is written once and never duplicated.
 
+## Size vs performance policy
+
+Release builds are configured **per platform** (see `.cargo/config.toml`
+and `Cargo.toml`):
+
+- **Native (Windows/Linux/macOS) — maximum performance**: `opt-level=3`,
+  `codegen-units=1`, fat LTO. Debug info is stripped (no runtime impact).
+- **Web (wasm32) — minimum size**: `opt-level=z`, same LTO, stripped,
+  plus a `wasm-opt -Oz` pass (Binaryen). The release web bundle is
+  ~16 MB (was 51 MB with default Bevy features and no post-processing).
+  The used Wasm features (bulk-memory, sign-ext, nontrapping-float-to-int,
+  reference-types) are baseline in all modern browsers — Chrome 75+,
+  Firefox 79+, Safari 15+ (hence the iOS 15 deployment target).
+- Bevy is compiled with a **manual feature set** (`default-features = false`):
+  only UI + render + winit — no 3D, audio codecs, gltf/texture loaders,
+  scene serialization or picking. This alone cuts the web binary several times.
+
 ## Getting started
 
 Prerequisites: [Rust](https://rustup.rs) (latest stable), Visual Studio
-C++ Build Tools (Windows), and [Trunk](https://trunkrs.dev)
-(`cargo install --locked trunk`) plus the `wasm32-unknown-unknown` target
-(`rustup target add wasm32-unknown-unknown`) for web builds.
+C++ Build Tools (Windows); for web builds — [Trunk](https://trunkrs.dev)
+(`cargo install --locked trunk`), the `wasm32-unknown-unknown` target
+(`rustup target add wasm32-unknown-unknown`) and, for the min-size release,
+[wasm-opt](https://github.com/WebAssembly/binaryen) (Binaryen) in PATH.
 
 ```bash
 cargo test          # unit tests (pure logic)
@@ -63,13 +81,13 @@ cargo run           # native run (debug); release: cargo run --release
 ### Web
 
 ```bash
-trunk serve              # dev server on http://localhost:8080
-trunk build --release    # static bundle in dist/web/
+trunk serve                      # dev server on http://localhost:8080
+scripts/build_web_release.sh     # min-size release bundle in dist/web/ (~16 MB)
 ```
 
 ### Android
 
-1. Build the web bundle: `trunk build --release`
+1. Build the min-size web bundle: `scripts/build_web_release.sh`
 2. Copy it into the shell assets:
    `cp -r dist/web/* shells/android/app/src/main/assets/web/`
    (create the `web/` directory first; dev alternative — a `trunk serve`
@@ -83,7 +101,7 @@ hardware-accelerated `WebView` loading `file:///android_asset/web/index.html`.
 
 ### iOS (build on macOS)
 
-1. Build the web bundle: `trunk build --release`
+1. Build the min-size web bundle: `scripts/build_web_release.sh`
 2. Copy it into the shell resources:
    `mkdir -p shells/ios/Resources/web && cp -r dist/web/* shells/ios/Resources/web/`
 3. Generate and open the Xcode project:
