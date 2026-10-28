@@ -1,6 +1,6 @@
 # RGE — Rust Game Engine (Bevy)
 
-Initial vibecoded prototype of a game, written in Rust on the
+Vibecoded prototype of a game, written in Rust on the
 [**Bevy**](https://github.com/bevyengine/bevy) engine.
 
 Current state: a fullscreen **game main menu** that builds and runs on
