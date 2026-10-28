@@ -265,10 +265,18 @@ for the host target in `.cargo/config.toml` (the global user config sets
 
 ---
 
-## 12. Workflow: Commit & Push After Every Task (MANDATORY)
+## 12. Workflow: Sync, Commit & Push (MANDATORY)
 
-- After **every solved task** (a request fully implemented and verified),
-  **commit the changes and push them to GitHub** (`git push` to `origin`).
+**Before making any changes to the project:**
+
+- Always check GitHub for new changes first (`git fetch origin`) and compare
+  the local branch with `origin/master`. If the remote is ahead, **take the
+  remote changes first** (`git pull --rebase origin master`) and only then
+  start editing. Never build new work on top of a stale local branch.
+
+**After every solved task:**
+
+- Commit the changes and push them to GitHub (`git push` to `origin`).
 - Do not leave solved work uncommitted, and do not batch several solved
   tasks into one commit.
 - Commit messages: English, imperative mood, short subject + bullet body
