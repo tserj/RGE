@@ -1,0 +1,11 @@
+# Конфигурация сборки web-версии (trunk): https://trunkrs.dev
+# Сборка:  trunk build            (dev, быстро)
+#          trunk build --release  (релиз для публикации/оболочек)
+# Запуск:  trunk serve            (dev-сервер с автопересборкой)
+
+[build]
+target = "index.html"
+dist = "dist/web"
+
+[serve]
+port = 8080

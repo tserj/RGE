@@ -12,3 +12,13 @@ rustflags = [
     "-C", "panic=unwind",
     "-C", "target-cpu=generic",
 ]
+
+# WASM-сборка (web): глобальный ~/.cargo/config.toml подкладывает флаги
+# (panic=abort, target-cpu=native, inline-threshold), которые к wasm
+# неприменимы (inline-threshold удалён из rustc) и ломают сборку.
+# Пустой набор cargo игнорирует, поэтому задаём нейтральные флаги явно.
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C", "panic=abort",
+    "-C", "target-cpu=generic",
+]

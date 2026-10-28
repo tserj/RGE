@@ -1,69 +1,122 @@
-# RGE — Rust Game Engine
+# RGE — Rust Game Engine (Bevy)
 
-Initial vibecoded template of Game Engine written in Rust.
+Initial vibecoded prototype of a game, written in Rust on the
+[**Bevy**](https://github.com/bevyengine/bevy) engine.
 
-Current state: a fullscreen **game main menu** prototype built on `wgpu`
-(DirectX 12 on Windows, Vulkan on Linux, Metal on macOS), with modular
-architecture ready to grow into a full game.
+Current state: a fullscreen **game main menu** that builds and runs on
+**five platforms**: Windows, Linux, macOS (native), Web (WebAssembly) and
+Android/iOS (native WebView shells around the web build).
+
+## Engine
+
+The game is built on [Bevy](https://github.com/bevyengine/bevy) — a
+refreshingly simple, data-driven game engine in Rust (ECS, plugin
+architecture, built on `wgpu`: DirectX 12 / Vulkan / Metal / WebGL2).
+Rendering, windowing, UI and input all go through Bevy's `DefaultPlugins`;
+the game itself contains only menu logic and UI composition.
 
 ## Features
 
-- Fullscreen borderless window, vsync render loop (`wgpu 30` + `winit 0.30`)
-- Forced graphics backend per OS with startup verification:
-  **Windows → DirectX 12**, **Linux → Vulkan**, **macOS → Metal**
-- Text rendering: font rasterized on CPU (`fontdue`) into an R8 glyph atlas,
-  drawn with a custom wgpu pipeline (Cyrillic + arrows supported)
-- Layout-independent keyboard navigation (W/S, ↑/↓, Enter, Esc — Latin and
-  Russian layouts), with autorepeat/press-leak protection
-- Clean startup: no console window, no white flash (first frame rendered
-  before the window is shown)
-- File logging (`dx12_menu.log` next to the executable) and native
-  MessageBox for critical errors
-- 12 unit tests covering input/menu/logging logic
+- Fullscreen borderless window (desktop) with vsync; canvas-filling page (web)
+- Bevy UI screen: title, menu items, gold selection with underline,
+  action message, control hints — all Russian UI strings in `config.rs`
+- Layout-independent keyboard navigation (`KeyCode` physical keys:
+  W/S, ↑/↓, Enter, Esc work on both Latin and Russian layouts)
+- Mouse and touch: click/tap a menu item to select and confirm
+- Clean startup: no console window (GUI subsystem), window shown after the
+  first frames (no white flash)
+- File logging (`game_menu.log` next to the executable, native platforms)
+  and native MessageBox for critical errors (Windows)
+- Embedded font (Fira Sans, OFL license included) — no asset loading at all
+- **16 unit tests** covering input mapping, menu/game logic and logging
+  (pure logic, no GPU, no windows)
+
+## Platforms
+
+| Platform | How | Build command |
+|---|---|---|
+| Windows | native (DirectX 12 via wgpu) | `cargo run --release` |
+| Linux | native (Vulkan via wgpu) | `cargo run --release` |
+| macOS | native (Metal via wgpu) | `cargo run --release` |
+| Web | WebAssembly + WebGL2, served/bundled by [Trunk](https://trunkrs.dev) | `trunk serve` / `trunk build --release` |
+| Android | native Gradle app (Kotlin) with a system `WebView` hosting the web build | see below |
+| iOS | native Xcode app (Swift) with a `WKWebView` hosting the web build | see below |
+
+Bevy does not require a separate codebase per platform: the same Rust code
+compiles everywhere. Android and iOS do not have a supported native Rust
+toolchain story here, so per the project decision they use **lightweight
+native shells** (a WebView in a minimal app) that host the **web build** —
+the game logic is written once and never duplicated.
+
+## Getting started
+
+Prerequisites: [Rust](https://rustup.rs) (latest stable), Visual Studio
+C++ Build Tools (Windows), and [Trunk](https://trunkrs.dev)
+(`cargo install --locked trunk`) plus the `wasm32-unknown-unknown` target
+(`rustup target add wasm32-unknown-unknown`) for web builds.
+
+```bash
+cargo test          # unit tests (pure logic)
+cargo run           # native run (debug); release: cargo run --release
+```
+
+### Web
+
+```bash
+trunk serve              # dev server on http://localhost:8080
+trunk build --release    # static bundle in dist/web/
+```
+
+### Android
+
+1. Build the web bundle: `trunk build --release`
+2. Copy it into the shell assets:
+   `cp -r dist/web/* shells/android/app/src/main/assets/web/`
+   (create the `web/` directory first; dev alternative — a `trunk serve`
+   URL is prepared in `MainActivity.kt`)
+3. Open `shells/android/` in Android Studio (or run `gradle assembleDebug`)
+   and deploy `app-debug.apk` to a device/emulator.
+
+The shell is a single-activity app (`MainActivity.kt`): a fullscreen
+hardware-accelerated `WebView` loading `file:///android_asset/web/index.html`.
+`INTERNET` permission is only needed for the dev `trunk serve` mode.
+
+### iOS (build on macOS)
+
+1. Build the web bundle: `trunk build --release`
+2. Copy it into the shell resources:
+   `mkdir -p shells/ios/Resources/web && cp -r dist/web/* shells/ios/Resources/web/`
+3. Generate and open the Xcode project:
+   `brew install xcodegen && cd shells/ios && xcodegen && open GameMenu.xcodeproj`
+4. Run on a simulator/device.
+
+The shell is a single-file app (`Sources/App.swift`): a fullscreen
+`WKWebView` loading the bundled `web/index.html`.
 
 ## Architecture
 
 ```
-src/
-├── main.rs      entry point (bootstrap, panic hook)
-├── config.rs    window/UI configuration constants
-├── app.rs       orchestrator: winit event loop → input → game → gfx
-├── input.rs     input module: actions, autorepeat filtering, key latching
-├── game/        pure game logic (menu now, scenes later), no gfx deps
-├── gfx/         ALL rendering: renderer facade, pipeline (WGSL), text atlas,
-│                frame composition, platform backends (dx12/vulkan/metal)
-└── logging/     file logger + platform fatal-error dialog (MessageBox)
+├── index.html            web entry for Trunk (canvas fills the page, black bg)
+├── Trunk.toml            web build config (dist/web, serve port)
+├── assets/fonts/         embedded font source + OFL license (include_bytes!)
+├── shells/
+│   ├── android/          Gradle shell: WebView + web build in assets
+│   └── ios/              XcodeGen shell: WKWebView + web build in resources
+└── src/
+    ├── main.rs           entry: panic hook, logging init, Bevy App + WindowPlugin
+    ├── config.rs         window/UI configuration constants, embedded font
+    ├── input.rs          input module: physical key -> Action mapping
+    ├── game/             PURE game logic (menu now, scenes later), no Bevy deps
+    │   ├── mod.rs        `Game` + `GameView` snapshot for the UI
+    │   └── menu.rs       `Menu` selection state machine
+    ├── ui/               Bevy UI plugin: build screen, route input -> game,
+    │                     reflect GameView -> widgets, exit handling
+    └── logging/          file logger (native) + platform fatal-error dialog;
+                          no-op on web (Bevy LogPlugin writes to the console)
 ```
 
-Direction of dependencies: `app → {game, input, gfx, logging, config}`;
-`game` never depends on `gfx` (renderer consumes a `GameView` snapshot) —
-this keeps game logic unit-testable without a GPU.
+Direction of dependencies: `main → {ui, game, input, logging, config}`;
+`game` never depends on Bevy (it is wrapped into a `GameState` resource by
+`ui`) — this keeps game logic unit-testable without a GPU or a window.
 
-## Build
-
-```bash
-cargo build --release   # executable: target/release/dx12_menu.exe
-cargo test              # pure-logic unit tests (no GPU, no windows)
-```
-
-Requirements: stable Rust (MSVC toolchain on Windows), a DX12-capable GPU
-on Windows.
-
-## Controls
-
-| Key                | Action            |
-|--------------------|-------------------|
-| W / ↑              | move up           |
-| S / ↓              | move down         |
-| Enter              | activate item     |
-| Esc                | quit              |
-
-Both Latin and Russian keyboard layouts work.
-
-## Notes
-
-- `AGENTS.md` contains the full guide for AI agents working on this repo
-  (architecture details, conventions, language rules, verified wgpu 30 API
-  notes). Read it before making changes.
-- Comments in source files are intentionally in Russian; agent-facing
-  documentation is English-only.
+See `AGENTS.md` for contributor/agent guidance.

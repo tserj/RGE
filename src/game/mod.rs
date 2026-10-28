@@ -1,22 +1,18 @@
 //! Игровая логика: сцены, обновление, состояние.
 //!
-//! Модуль полностью отделён от графики и ввода: получает действия
-//! (`input::Action`), отдаёт снимок состояния (`GameView`) для рендера.
-//! В будущем здесь появятся сцены собственно игры.
+//! Модуль полностью чистый: не зависит ни от Bevy, ни от графики.
+//! Получает действия (`input::Action`), отдаёт снимок состояния
+//! (`GameView`) для интерфейса. В будущем здесь появятся сцены игры.
 
 pub mod menu;
 
-use crate::config;
 use crate::input::Action;
 
-/// Снимок игрового состояния для отрисовки (графика не знает
-/// внутреннего устройства игры).
+/// Снимок изменчивой части игрового состояния для интерфейса (UI не знает
+/// внутреннего устройства игры; статичные строки UI берёт из `config`).
 pub struct GameView {
-    pub title: &'static str,
-    pub items: &'static [&'static str],
     pub selected: usize,
     pub message: Option<String>,
-    pub hint: &'static str,
 }
 
 pub struct Game {
@@ -46,19 +42,23 @@ impl Game {
         }
     }
 
+    /// Прямой выбор пункта (клик/тап по пункту меню).
+    pub fn select(&mut self, index: usize) {
+        if self.running {
+            self.menu.select(index);
+        }
+    }
+
     /// Продолжает ли работу приложение.
     pub fn is_running(&self) -> bool {
         self.running
     }
 
-    /// Снимок состояния для рендера.
+    /// Снимок состояния для интерфейса.
     pub fn view(&self) -> GameView {
         GameView {
-            title: config::GAME_TITLE,
-            items: &config::MENU_ITEMS,
             selected: self.menu.selected,
             message: self.menu.message.clone(),
-            hint: config::HINT,
         }
     }
 }
@@ -88,8 +88,36 @@ mod tests {
     fn view_snapshot() {
         let game = Game::new();
         let view = game.view();
-        assert_eq!(view.items.len(), config::MENU_ITEMS.len());
         assert_eq!(view.selected, 0);
         assert!(view.message.is_none());
+    }
+
+    #[test]
+    fn select_jumps_to_item() {
+        let mut game = Game::new();
+        game.select(2); // «Моды»
+        let view = game.view();
+        assert_eq!(view.selected, 2);
+        assert!(game.is_running());
+
+        game.handle_action(Action::Confirm);
+        assert!(game.view().message.is_some());
+    }
+
+    #[test]
+    fn select_out_of_range_is_ignored() {
+        let mut game = Game::new();
+        game.select(99);
+        assert_eq!(game.view().selected, 0);
+    }
+
+    #[test]
+    fn input_after_exit_is_ignored() {
+        let mut game = Game::new();
+        game.handle_action(Action::Back);
+        game.handle_action(Action::Up);
+        game.select(0);
+        game.handle_action(Action::Confirm);
+        assert!(!game.is_running());
     }
 }

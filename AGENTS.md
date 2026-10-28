@@ -7,7 +7,10 @@
 > well-structured code; think about scalability and future extension before
 > implementing; prefer explicit and simple solutions over clever ones; never
 > leave dead code or TODO stubs behind; and always verify your work with the
-> build and tests available in this repository.
+> build and tests available in this repository. NEVER rewrite entire files with
+> edit/write. Always make minimal, targeted edits. If a file is longer than ~300
+> lines, do NOT output it in full. Use edit with small old/new fragments. Split
+> large changes into multiple small sequential edits, verify each with read/grep.
 
 ---
 
@@ -21,27 +24,24 @@
 | User-facing UI strings                       | Russian (the game menu is in Russian) |
 | Log file messages                            | Russian |
 
-**Never mix:** do not write English comments in source files, and do not
-write Russian text in agent documentation files.
+**Never mix:** do not write English comments in source files, and do
+not write Russian text in agent documentation files.
 
 ---
 
 ## 2. Project Overview
 
-A Windows-first (but cross-platform) prototype of a **fullscreen game main
-menu**, rendered with **wgpu** on top of native GPU backends:
+A cross-platform prototype of a **fullscreen game main menu**, built on the
+[**Bevy**](https://github.com/bevyengine/bevy) game engine (Bevy renders via
+`wgpu`: DirectX 12 on Windows, Vulkan on Linux, Metal on macOS, WebGL2 on web).
 
-- **Windows → DirectX 12** (`wgpu::Backends::DX12`)
-- **Linux → Vulkan** (`wgpu::Backends::VULKAN`)
-- **macOS → Metal** (`wgpu::Backends::METAL`)
+Target platforms:
 
-The selected backend is **enforced at startup** and verified against the
-actual adapter; a mismatch is a critical error (see Logging below).
-
-Current features: fullscreen borderless window, animated vsync render loop,
-text rendering (font rasterized on CPU into an R8 glyph atlas), keyboard
-navigation (W/S, arrows, layout-independent), Enter to activate menu items,
-Esc to exit, log file, MessageBox for fatal errors.
+- **Windows / Linux / macOS** — native binary.
+- **Web** — WebAssembly, built with [Trunk](https://trunkrs.dev).
+- **Android / iOS** — lightweight native shells (system WebView /
+  WKWebView) hosting the **web build**. There is no native Rust toolchain
+  pipeline for them in this repo, and the game logic must never be duplicated.
 
 Roadmap intent: this codebase will grow into a **full game**, so modularity
 and separation of concerns are mandatory (see §4).
@@ -52,110 +52,104 @@ and separation of concerns are mandatory (see §4).
 
 | Crate     | Version | Purpose                                          |
 |-----------|---------|--------------------------------------------------|
-| `wgpu`    | `30`    | Graphics API (WebGPU-style; DX12/Vulkan/Metal)    |
-| `winit`   | `0.30`  | Window creation + event loop (`ApplicationHandler`) |
-| `pollster`| `0.4`   | Blocking on wgpu async calls (`request_adapter`, `request_device`) |
-| `fontdue` | `0.9`   | CPU-side font rasterization (glyph bitmaps + metrics) |
+| `bevy`    | `0.20`  | Game engine: windowing, rendering (wgpu), UI, input, audio, assets |
 | `windows` | `0.62`  | Win32 API, **Windows only** (`MessageBoxW` for fatal errors) |
+| `getrandom` | `0.4` | **wasm32 only**: `wasm_js` feature for the browser PRNG |
 
 Toolchain: stable Rust (developed on 1.99). Edition 2021.
+Web builds additionally require: `wasm32-unknown-unknown` target and `trunk`.
 
 ---
 
 ## 4. Architecture
 
 ```
-src/
-├── main.rs              Entry point: panic hook → logging init → run app.
-│                        `#![windows_subsystem = "windows"]` — no console window.
-├── config.rs            Configuration constants: window title/size, menu strings,
-│                        log file name. User-facing text lives HERE.
-├── app.rs               ORCHESTRATOR. Implements `winit::application::ApplicationHandler`.
-│                        Contains NO game logic and NO rendering code — only
-│                        routing: window events → input → game → view → renderer.
-│                        Also: hidden-window startup (render first frame BEFORE
-│                        `set_visible(true)` to avoid a white flash at launch).
-├── input.rs             INPUT module. Translates winit `KeyEvent` into engine
-│                        `Action` values (Up/Down/Confirm/Back), layout-independent
-│                        (Latin + Russian). Contains anti-repeat protection (§5).
-├── game/                GAME LOGIC module. Pure Rust, no graphics/winit deps.
-│   ├── mod.rs           `Game` — consumes `input::Action`, owns state,
-│   │                    exposes `GameView` snapshot for rendering.
-│   └── menu.rs          `Menu` — selection state machine.
-├── gfx/                 GRAPHICS module. Owns ALL rendering.
-│   ├── mod.rs           `Renderer` facade: instance/surface/device/queue setup,
-│   │                    swapchain config, per-frame render, atlas upload.
-│   ├── platform/        Backend selection per OS (§6).
-│   │   ├── windows.rs   → DX12
-│   │   ├── linux.rs     → Vulkan
-│   │   └── macos.rs     → Metal
-│   ├── common.rs        Vertex format, quad/draw-list primitives, ortho MVP.
-│   ├── pipeline.rs      WGSL shader + render pipeline + bind group layouts.
-│   ├── text.rs          Text: fontdue rasterizer, shelf-packed R8 atlas
-│   │                    (2048×2048), glyph cache keyed by (char, px),
-│   │                    font file discovery per OS.
-│   └── frame.rs         Frame composition: `GameView` → draw list
-│                        (panel, title, items, selection, message, hint).
-└── logging/             LOGGING module.
-    ├── mod.rs           Levels (INFO/WARN/ERROR), UTC timestamps, log file
-    │                    next to the exe (`dx12_menu.log`, append mode),
-    │                    `critical()` = log + MessageBox + exit(1).
-    └── platform/        Fatal-error dialog per OS (Windows → `MessageBoxW`;
-                        Linux/macOS → stderr fallback).
+├── index.html            web entry for Trunk (canvas fills the page, black bg)
+├── Trunk.toml            web build config (dist/web, serve port)
+├── assets/fonts/         embedded font source + OFL license (include_bytes!)
+├── shells/
+│   ├── android/          Gradle shell (Kotlin): WebView + web build in assets
+│   └── ios/              XcodeGen shell (Swift): WKWebView + web build in resources
+└── src/
+    ├── main.rs           Entry point: panic hook → logging init → Bevy App
+    │                     (DefaultPlugins + WindowPlugin) → ui::MenuUiPlugin.
+    │                     `#![windows_subsystem = "windows"]` — no console window.
+    ├── config.rs         Configuration constants: window title, menu strings,
+    │                     embedded font (`FONT_DATA`). User-facing text lives HERE.
+    ├── input.rs          INPUT module: physical `KeyCode` → engine `Action`
+    │                     (Up/Down/Confirm/Back), layout-independent.
+    ├── game/             GAME LOGIC module. Pure Rust, NO Bevy/winit/wgpu deps.
+    │   ├── mod.rs        `Game` — consumes `input::Action`, owns state,
+    │   │                 exposes `GameView` snapshot for the UI.
+    │   └── menu.rs       `Menu` — selection state machine.
+    ├── ui/               UI module: Bevy UI plugin.
+    │   └── mod.rs        Builds the screen (panel, title, items, selection,
+    │                     message, hint), routes keyboard/mouse/touch → game,
+    │                     reflects `GameView` into widgets, writes AppExit.
+    └── logging/          LOGGING module (see §8).
+        ├── mod.rs        Native: log file next to the exe; web: no-op.
+        └── platform/     Fatal-error dialog per OS (Windows → `MessageBoxW`;
+                          Linux/macOS → stderr fallback).
 ```
 
 ### Data flow (one frame)
 
 ```
-winit event loop (app.rs)
-  └─ WindowEvent::KeyboardInput
-       └─ input::InputState::process()   → Option<Action>   (filters repeats)
-            └─ game::Game::handle_action()  (pure state update)
-                 └─ about_to_wait → window.request_redraw()
-                      └─ RedrawRequested:
-                           game.view() → GameView snapshot
-                             └─ gfx::frame::build_menu_frame(view) → DrawList
-                                  └─ gfx::Renderer::render() → GPU → Present
+Bevy Update schedule
+  ├─ handle_keyboard   Res<ButtonInput<KeyCode>> → input::map_key
+  │                      → GameState.0.handle_action()  (pure state update)
+  ├─ handle_pointer    Query<Changed<Interaction>> → GameState.0.select/confirm
+  └─ refresh_from_game Res<GameState> change detection → GameView → UI colors,
+                         Underline on selected item, message text/visibility
+exit_when_game_stops → MessageWriter<AppExit>::write(Success)
 ```
 
-**Direction of dependencies:** `app` depends on `game`, `input`, `gfx`,
+**Direction of dependencies:** `main` depends on `game`, `input`, `ui`,
 `logging`, `config`. `game` depends only on `config` (+`input::Action` type).
-`gfx` depends only on `game::GameView` (read-only snapshot) + `logging` +
-`config`. Never let `game` depend on `gfx` or on winit/wgpu types.
+`ui` depends on `game::GameView`/`GameState` + `input` + `logging` + `config`.
+Never let `game` depend on Bevy — it is wrapped into the `GameState` resource
+by `ui` precisely so the logic stays pure and unit-testable.
 
 ---
 
 ## 5. Important Behaviors (do not break)
 
-1. **No key-press "leak"**: `input.rs` ignores autorepeat events
-   (`KeyEvent.repeat == true`) and latches keys until `Released`. A second
-   `Pressed` without a `Released` is dropped. This is intentional — it
-   prevents a held Enter from firing twice (e.g., into a future game scene).
-   Covered by unit tests.
+1. **No key-press "leak"**: autorepeat and repeated presses are filtered by
+   Bevy itself — `ButtonInput::press` only registers a transition, so
+   `just_pressed` fires exactly once per physical key press. `input.rs`
+   additionally documents this contract. Covered by unit tests.
 2. **No white flash at startup**: the window is created with
-   `.with_visible(false)`, the first frame (including DX12 pipeline
-   compilation) is rendered while hidden, and only then
-   `set_visible(true)` + `request_redraw()` are called.
-3. **Backend verification**: `gfx/platform` picks the backend for the OS;
-   `Renderer::new` compares the adapter's actual backend and fails with a
-   critical error on mismatch.
-4. **Fully black background**: clear color is black and the background quad
-   is solid black (explicit user requirement).
-5. **Vsync**: `PresentMode::Fifo`, continuous redraw via
-   `about_to_wait → request_redraw`.
-6. **No console window**: `#![windows_subsystem = "windows"]` in `main.rs`.
-   All diagnostics go to the log file / MessageBox, never to stdout.
+   `visible: false` and shown by `make_window_visible` on the 3rd frame,
+   after the pipeline has compiled and the first frames are rendered.
+3. **Fullscreen on desktop only**: `WindowMode::BorderlessFullscreen(MonitorSelection::Primary)`;
+   on wasm the mode stays `Windowed` and the canvas fills the page
+   (`fit_canvas_to_parent` in `index.html` + CSS).
+4. **Fully black background**: clear color + root UI node are solid black
+   (explicit user requirement).
+5. **Vsync**: `PresentMode::AutoVsync`.
+6. **No console window**: `#![windows_subsystem = "windows"]` in `main.rs`
+   (attribute is ignored on other platforms). All diagnostics go to the log
+   file / MessageBox / browser console.
+7. **Font is embedded**: `config::FONT_DATA` (`include_bytes!`) — there are
+   NO runtime asset loads anywhere; bevy_asset's "assets next to the exe"
+   convention is intentionally not used.
+8. **Exit**: `Esc` or confirming «Выход» stops the game loop →
+   `AppExit::Success`. On web the loop simply stops (a tab cannot be closed).
 
 ---
 
 ## 6. Platform Abstraction Rules
 
-Anything OS-specific must live in a `platform` submodule selected via
-`#[cfg(target_os = "...")]` + re-export:
-
-- `gfx/platform/{windows,linux,macos}.rs` — backend selection.
-- `logging/platform/{windows,linux,macos}.rs` — fatal error dialog.
-- `gfx/text.rs` — font directory/file lists per OS (`cfg`-gated consts).
+- Native windowing/rendering differences are Bevy's job; the codebase stays
+  platform-agnostic except for:
+  - `logging/platform/{windows,linux,macos}.rs` — fatal error dialog,
+    selected via `#[cfg(target_os)]` + re-export in `platform/mod.rs`.
+  - `main.rs` — `cfg(target_arch = "wasm32")` gates (panic hook variant,
+    window mode).
+  - `logging/mod.rs` — the whole file logger is a no-op under wasm32.
+  - `.cargo/config.toml` — per-target rustflags overrides (see §7).
+- Android/iOS shells live in `shells/` and contain **no game logic**; they
+  host the web build produced by trunk.
 
 When adding new platform-specific behavior, follow the same pattern:
 declare a module per OS, gate with `#[cfg]`, re-export a common name,
@@ -166,64 +160,70 @@ and keep the call sites platform-agnostic.
 ## 7. Build, Test, Run
 
 ```bash
+cargo test             # unit tests (pure logic only — no windows, no GPU)
 cargo build            # debug build
 cargo build --release  # release build (what users run)
-cargo test             # unit tests (pure logic only — no windows, no GPU)
 cargo run              # runs the debug binary (GUI window will open!)
+
+# Web (requires: rustup target add wasm32-unknown-unknown, cargo install trunk)
+trunk serve            # dev server, http://localhost:8080
+trunk build --release  # static bundle in dist/web/
 ```
 
-- **Unit tests** cover pure logic only (input latch, menu state, logging
-  helpers). They must never open windows or touch the GPU. Keep game logic
-  testable by keeping `game/` free of winit/wgpu.
+- **Unit tests** cover pure logic only (key mapping, menu state, game flow,
+  logging helpers). They must never open windows or touch the GPU. Keep game
+  logic testable by keeping `game/` free of Bevy types.
 - **Testing the GUI**: a full GUI smoke test opens a real fullscreen window.
   Do this ONLY if you can close the process yourself (e.g.,
-  `Stop-Process -Name dx12_menu -Force` after a few seconds). **Never ask
+  `taskkill //F //IM game_menu.exe` after a few seconds). **Never ask
   the user to interact with the window** — the user is not at the computer.
   Work autonomously.
 - `.cargo/config.toml` (project-local) **overrides** the global
-  `~/.cargo/config.toml` on this machine, which sets `panic=abort` and
-  `target-cpu=native` globally. The project appends
-  `-C panic=unwind -C target-cpu=generic` because `panic=abort` breaks
-  `cargo test`. Do not remove these overrides.
+  `~/.cargo/config.toml` on this machine, which sets `panic=abort`,
+  `target-cpu=native` and a removed `-C inline-threshold` flag globally.
+  The project appends safe flags for `x86_64-pc-windows-msvc` and
+  `wasm32-unknown-unknown`. Do not remove these overrides — without them
+  native tests break (`panic=abort`) and wasm builds fail to compile.
 
 ---
 
 ## 8. Logging & Errors
 
-- Log file: `dx12_menu.log`, written **next to the executable**
+- Log file: `game_menu.log`, written **next to the executable**
   (`std::env::current_exe()`), append mode, UTF-8, UTC timestamps.
-- Use `logging::info / warn / error` from anywhere.
-- **Critical errors** (window creation failure, GPU/backend mismatch, font
-  not found, event loop failure, log file unwritable): call
-  `logging::critical(msg)` — it writes to the log, shows a blocking
-  MessageBox (`MB_ICONERROR|TOPMOST` on Windows) and exits the process.
+  Native platforms only; on web everything is a no-op and Bevy's
+  `LogPlugin` writes diagnostics to the browser console.
+- Use `logging::info / error` from anywhere.
+- **Critical errors** during logging init: `logging::init()` shows a
+  blocking MessageBox (`MB_ICONERROR|TOPMOST` on Windows) and exits the
+  process.
 - Panics are captured by a panic hook in `main.rs` and written to the log.
 
 ---
 
-## 9. wgpu 30 API Notes (learned the hard way — verified against sources)
+## 9. Bevy 0.20 API Notes (learned the hard way — verified against sources)
 
-- `Instance::new(InstanceDescriptor)` — descriptor by value; `InstanceDescriptor`
-  has **no `Default`**; construct all fields (`backends`, `flags`,
-  `memory_budget_thresholds`, `backend_options`, `display`).
-- `instance.request_adapter(&opts)` → `impl Future<Output = Result<Adapter, _>>`;
-  `RequestAdapterOptions` has an `apply_limit_buckets` field.
-- `adapter.request_device(&DeviceDescriptor)` → future of `(Device, Queue)`;
-  descriptor fields: `label, required_features, required_limits,
-  experimental_features, memory_hints, trace`.
-- `surface.get_current_texture()` returns the enum
-  `wgpu::CurrentSurfaceTexture` (`Success / Suboptimal / Outdated / Lost /
-  Timeout / Occluded / Validation`) — **not** a `Result`.
-- Present via **`queue.present(frame)`** — `SurfaceTexture::present()` no
-  longer exists.
-- `PipelineLayoutDescriptor`: `bind_group_layouts: &[Option<&BindGroupLayout>]`,
-  `immediate_size` (no `push_constant_ranges` field).
-- `RenderPipelineDescriptor`: has `cache: Option<&PipelineCache>` and
-  `multiview_mask`; `VertexState.buffers: &[Option<VertexBufferLayout>]`.
-- `RenderPassColorAttachment` requires `depth_slice: None` (2D case).
-- `queue.submit` takes an iterator; `write_texture` uses
-  `TexelCopyTextureInfo` / `TexelCopyBufferLayout` (renamed from ImageCopy*).
-- `MemoryHints` and `Trace` have `Default`; `ExperimentalFeatures::disabled()`.
+- Text: `Text::new(...)`, `TextFont { font: FontSource, font_size: FontSize }`
+  (`FontSource::Handle(handle)` for bundled fonts, `FontSize::Px(..)`),
+  `TextColor(Color)`, `TextLayout`/`Justify` live in `bevy::text`.
+  `Underline` is a separate component (insert/remove on the selected item).
+- `Interaction` is **deprecated** in 0.20 (picking-based `Hovered`/`Pressed`
+  is the future), but the built-in `ui_focus_system` still drives it —
+  and it handles both mouse and touch. We use it with
+  `#[allow(deprecated)]` + an explanatory comment.
+- Exiting: `MessageWriter<AppExit>` (not `EventWriter`), `exit.write(AppExit::Success)`.
+- `Single<&mut Window>` / `Single<&mut CursorOptions>` system params work;
+  `Window` fields `fit_canvas_to_parent: bool`, `visible: bool`,
+  `WindowMode::BorderlessFullscreen(MonitorSelection)`.
+- `ButtonInput::press` guards `just_pressed` (fires once per physical press).
+- Font from bytes: `Font::from_bytes(Vec<u8>)`, registered via
+  `ResMut<Assets<Font>>::add` — needed because bevy_asset resolves asset
+  paths **relative to the executable**, which is hostile to dev runs and
+  to the shell platforms.
+- Events/messages, `AppExit`, `ExitCondition` live around
+  `bevy::window::WindowPlugin` / `bevy::app`.
+- wasm32 needs `getrandom` with feature `wasm_js` (bevy 0.20 uses getrandom 0.4).
+- Bevy UI requires a camera (`commands.spawn(Camera2d)`) to render at all.
 
 ---
 
@@ -231,15 +231,15 @@ cargo run              # runs the debug binary (GUI window will open!)
 
 - Comments in Rust sources: **Russian**, explain *why*, not just *what*.
 - New modules: one concern per module; pure logic (game) must stay
-  dependency-free from winit/wgpu so it remains unit-testable.
-- New user-facing strings go into `config.rs` **and** must be added to the
-  pre-rasterization string list in `gfx/mod.rs::menu_strings()` (glyphs are
-  rasterized at startup; unknown glyphs are skipped at runtime).
-- UI scale: all font sizes are multiplied by `window.scale_factor()`
-  (HiDPI); keep it that way.
+  dependency-free from Bevy so it remains unit-testable.
+- New user-facing strings go into `config.rs`; the UI reads them from there
+  (no glyph pre-rasterization list is needed anymore — Bevy lays out text).
+- UI scale: font sizes are logical pixels (`FontSize::Px`); Bevy applies the
+  window scale factor automatically. Layout uses `Val::Percent`/`Vh` so the
+  screen adapts to any window and to mobile shells.
 - Extensions to expect later: game scenes (beyond menu), gamepad input,
-  audio, asset pipeline. Keep the `app → game / gfx` boundaries clean so
-  these can be added without rewrites.
+  audio, asset pipeline. Keep the `ui → game` boundary clean so these can be
+  added without rewrites.
 
 ---
 
@@ -247,9 +247,13 @@ cargo run              # runs the debug binary (GUI window will open!)
 
 - [x] Menu renders (title, items, selection with underline, messages, hint)
 - [x] Keyboard navigation, layout-independent (W/S, ↑/↓, Enter, Esc)
-- [x] Anti-repeat input protection (no Enter "leak" on scene entry)
+- [x] Mouse + touch: tap/click on an item selects and confirms it
 - [x] No console window (GUI subsystem), no white flash at startup
 - [x] Black background, vsync, fullscreen borderless, hidden cursor
-- [x] Log file next to exe + MessageBox for critical errors
-- [x] 12 unit tests passing (`cargo test`)
+- [x] Log file next to exe + MessageBox for critical errors (native)
+- [x] Ported from hand-rolled wgpu renderer to **Bevy 0.20**
+- [x] Web build via Trunk (WebAssembly + WebGL2)
+- [x] Android shell (Gradle + WebView) and iOS shell (XcodeGen + WKWebView)
+- [x] Embedded OFL font with Cyrillic support (Fira Sans + license file)
+- [x] 16 unit tests passing (`cargo test`)
 - [x] Debug and release builds warning-free

@@ -21,6 +21,13 @@ impl Menu {
         self.selected = (self.selected + 1) % config::MENU_ITEMS.len();
     }
 
+    /// Прямой выбор пункта (клик/тап). Вне диапазона — игнорируется.
+    pub fn select(&mut self, index: usize) {
+        if index < config::MENU_ITEMS.len() {
+            self.selected = index;
+        }
+    }
+
     /// Активация выбранного пункта. Возвращает `true`, если выбран выход
     /// из приложения.
     pub fn confirm(&mut self) -> bool {
@@ -46,6 +53,16 @@ mod tests {
         menu.down();
         assert_eq!(menu.selected, 0);
         menu.down();
+        assert_eq!(menu.selected, 1);
+    }
+
+    #[test]
+    fn select_sets_index() {
+        let mut menu = Menu::new();
+        menu.select(1);
+        assert_eq!(menu.selected, 1);
+        // Вне диапазона выбор не меняется.
+        menu.select(42);
         assert_eq!(menu.selected, 1);
     }
 
